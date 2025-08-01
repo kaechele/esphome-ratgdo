@@ -35,10 +35,6 @@ namespace ratgdo {
             this->tx_pin_ = tx_pin;
             this->rx_pin_ = rx_pin;
 
-            this->sw_serial_.begin(9600, SWSERIAL_8N1, rx_pin->get_pin(), tx_pin->get_pin(), true);
-            this->sw_serial_.enableIntTx(false);
-            this->sw_serial_.enableAutoBaud(true);
-
             this->traits_.set_features(Traits::all());
         }
 
@@ -264,12 +260,18 @@ namespace ratgdo {
             static uint32_t last_read = 0;
 
             if (!reading_msg) {
-                while (this->sw_serial_.available()) {
-                    uint8_t ser_byte = this->sw_serial_.read();
+                while (this->ratgdo_->available()) {
+                    uint8_t ser_byte;
+                    if (!this->ratgdo_->read_byte(&ser_byte)) {
+                        ESP_LOG2(TAG, "Unable to read byte, baud: %d", this->ratgdo_->get_baud_rate());
+                        byte_count = 0;
+                        continue;
+                    }
+
                     last_read = millis();
 
                     if (ser_byte != 0x55 && ser_byte != 0x01 && ser_byte != 0x00) {
-                        ESP_LOG2(TAG, "Ignoring byte (%d): %02X, baud: %d", byte_count, ser_byte, this->sw_serial_.baudRate());
+                        ESP_LOG2(TAG, "Ignoring byte (%d): %02X, baud: %d", byte_count, ser_byte, this->ratgdo_->get_baud_rate());
                         byte_count = 0;
                         continue;
                     }
@@ -278,7 +280,7 @@ namespace ratgdo {
 
                     // if we are at the start of a message, capture the next 16 bytes
                     if (msg_start == 0x550100) {
-                        ESP_LOG1(TAG, "Baud: %d", this->sw_serial_.baudRate());
+                        ESP_LOG1(TAG, "Baud: %d", this->ratgdo_->get_baud_rate());
                         rx_packet[0] = 0x55;
                         rx_packet[1] = 0x01;
                         rx_packet[2] = 0x00;
@@ -289,12 +291,16 @@ namespace ratgdo {
                 }
             }
             if (reading_msg) {
-                while (this->sw_serial_.available()) {
-                    uint8_t ser_byte = this->sw_serial_.read();
+                while (this->ratgdo_->available()) {
+                    uint8_t ser_byte;
+                    if (!this->ratgdo_->read_byte(&ser_byte)) {
+                         ESP_LOG2(TAG, "Unable to read byte, baud: %d", this->ratgdo_->get_baud_rate());
+                        break;
+                    }
                     last_read = millis();
                     rx_packet[byte_count] = ser_byte;
                     byte_count++;
-                    // ESP_LOG2(TAG, "Received byte (%d): %02X, baud: %d", byte_count, ser_byte, this->sw_serial_.baudRate());
+                    // ESP_LOG2(TAG, "Received byte (%d): %02X, baud: %d", byte_count, ser_byte, this->ratgdo_->get_baud_rate());
 
                     if (byte_count == PACKET_LENGTH) {
                         reading_msg = false;
@@ -458,7 +464,7 @@ namespace ratgdo {
             auto now = micros();
 
             while (micros() - now < 1300) {
-                if (this->rx_pin_->digital_read()) {
+                if (!this->rx_pin_->digital_read()) {
                     if (!this->flags_.transmit_pending) {
                         this->flags_.transmit_pending = true;
                         this->transmit_pending_start_ = millis();
@@ -476,16 +482,19 @@ namespace ratgdo {
             }
 
             this->print_packet("Sending packet", this->tx_packet_);
-
             // indicate the start of a frame by pulling the 12V line low for at leat 1 byte followed by
             // one STOP bit, which indicates to the receiving end that the start of the message follows
             // The output pin is controlling a transistor, so the logic is inverted
-            this->tx_pin_->digital_write(true); // pull the line low for at least 1 byte
-            delayMicroseconds(1300);
-            this->tx_pin_->digital_write(false); // line high for at least 1 bit
-            delayMicroseconds(130);
+            uint32_t REGULAR_BAUD_RATE = this->ratgdo_->get_baud_rate();
+            uint32_t FRAME_START_BAUD_RATE = (REGULAR_BAUD_RATE * 9) / 13; // baud rate for the start of the frame
+            this->ratgdo_->set_baud_rate(FRAME_START_BAUD_RATE);
+            this->ratgdo_->load_settings();
+            this->ratgdo_->write_byte(0x00);
+            this->ratgdo_->flush();
+            this->ratgdo_->set_baud_rate(REGULAR_BAUD_RATE);
+            this->ratgdo_->load_settings();
 
-            this->sw_serial_.write(this->tx_packet_, PACKET_LENGTH);
+            this->ratgdo_->write_array(this->tx_packet_, PACKET_LENGTH);
 
             this->flags_.transmit_pending = false;
             this->transmit_pending_start_ = 0;

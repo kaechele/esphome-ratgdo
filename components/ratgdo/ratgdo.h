@@ -14,6 +14,7 @@
 #pragma once
 
 #include "esphome/components/binary_sensor/binary_sensor.h"
+#include "esphome/components/uart/uart.h"
 #include "esphome/core/component.h"
 #include "esphome/core/defines.h"
 #include "esphome/core/hal.h"
@@ -50,7 +51,7 @@ namespace ratgdo {
     using protocol::Args;
     using protocol::Result;
 
-    class RATGDOComponent : public Component {
+    class RATGDOComponent : public Component, public uart::UARTDevice {
     public:
         RATGDOComponent()
         {
@@ -63,6 +64,7 @@ namespace ratgdo {
         void setup() override;
         void loop() override;
         void dump_config() override;
+        float get_setup_priority() const override { return esphome::setup_priority::LATE; }
 
         void init_protocol();
 
@@ -123,6 +125,10 @@ namespace ratgdo {
         void set_dry_contact_close_sensor(esphome::binary_sensor::BinarySensor* dry_contact_close_sensor_);
         void set_discrete_open_pin(InternalGPIOPin* pin) { this->protocol_->set_discrete_open_pin(pin); }
         void set_discrete_close_pin(InternalGPIOPin* pin) { this->protocol_->set_discrete_close_pin(pin); }
+
+        uint32_t get_baud_rate() const { return this->parent_->get_baud_rate(); }
+        void set_baud_rate(uint32_t baud_rate) { this->parent_->set_baud_rate(baud_rate); }
+        void load_settings() { this->parent_->load_settings(false); }
 
         Result call_protocol(Args args);
 

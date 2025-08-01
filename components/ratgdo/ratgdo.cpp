@@ -44,12 +44,6 @@ namespace ratgdo {
 
     void RATGDOComponent::setup()
     {
-        this->output_gdo_pin_->setup();
-        this->output_gdo_pin_->pin_mode(gpio::FLAG_OUTPUT);
-
-        this->input_gdo_pin_->setup();
-        this->input_gdo_pin_->pin_mode(gpio::FLAG_INPUT | gpio::FLAG_PULLUP);
-
         this->input_obst_pin_->setup();
         this->input_obst_pin_->pin_mode(gpio::FLAG_INPUT);
         this->input_obst_pin_->attach_interrupt(RATGDOStore::isr_obstruction, &this->isr_store_, gpio::INTERRUPT_FALLING_EDGE);
@@ -109,9 +103,8 @@ namespace ratgdo {
     void RATGDOComponent::dump_config()
     {
         ESP_LOGCONFIG(TAG, "Setting up RATGDO...");
-        LOG_PIN("  Output GDO Pin: ", this->output_gdo_pin_);
-        LOG_PIN("  Input GDO Pin: ", this->input_gdo_pin_);
         LOG_PIN("  Input Obstruction Pin: ", this->input_obst_pin_);
+        this->check_uart_settings(9600, 1, esphome::uart::UART_CONFIG_PARITY_NONE, 8);
         this->protocol_->dump_config();
     }
 
